@@ -1,0 +1,92 @@
+# Tender Class. will include:
+# - A dictionary of info from tender pg online, including url
+# - download files
+
+import requests, re
+from bs4 import BeautifulSoup as soup
+from datetime import date, datetime, timedelta
+from packages.functions import Go_cft_pg, Cft_link_id, Filter_data
+
+
+class Tender:
+
+	website = r"https://www.etenders.gov.mt"
+	login_pg = r"https://www.etenders.gov.mt/epps/login.do"
+	
+	cft_1st = r"https://www.etenders.gov.mt/epps/quickSearchAction.do?searchSelect=1&selectedItem=quickSearchAction.do%3FsearchSelect%3D1"
+	next_pg = r"https://www.etenders.gov.mt/epps/quickSearchAction.do"
+
+	tender_pg = r"/epps/cft/prepareViewCfTWS.do?resourceId="
+	clarifications = r"/epps/cft/listClarification.do?resourceId="
+	contract_docs = r"/epps/cft/listContractDocuments.do?resourceId="
+
+	download_p1 = r"https://www.etenders.gov.mt/epps/cft/downloadCftResourceItems.do?resourceId="
+	download_p2 = r"&resourceType=ContractDocument"
+
+	now = datetime.now()
+	d = now.strftime("--%d-%m-%Y")
+	t = now.strftime("--%H;%M")
+
+	max_num_of_lots = 0
+	num_of_tenders = 0  # number of tenders. atm it's zero
+
+
+	def __init__(self, link_id):
+		self.link_id = link_id
+
+		Tender.num_of_tenders += 1
+		# increment num_of_tenders by 1
+		# since the __init__ function is called every time an instance of the class /
+		# is created, with each instance the num_of_tenders gets incremented
+
+
+	def Cft_link(self):
+		## link to tender page
+
+		self.cft = Tender.website + Tender.tender_pg + self.link_id
+		return self.cft
+
+	def Docs_link(self):
+		## link to tender documents
+
+		self.docs = Tender.website + Tender.contract_docs + self.link_id
+		return self.docs
+
+	def Clarifications_link(self):
+		## link to tender clarifications
+
+		self.clar = Tender.website + Tender.clarifications + self.link_id
+		return self.clar
+
+
+	def Parse_html(self):
+		## parsing html of tender page. preparing data
+
+		self.link = self.Cft_link()
+		self.tender_pg = requests.get(self.link)
+		self.pg_soup = soup(self.tender_pg.text, 'lxml')
+		self.tender_pg.close()
+		return self.pg_soup
+
+
+	def Tender_data(self):
+		## getting important an relevant information
+
+		self.pg_soup = self.Parse_html()
+
+		self.key = []
+		for dt_tag in self.pg_soup.div.dl.findAll('dt'):
+			self.key.append(dt_tag.text.strip())
+
+		self.value = []
+		for dd_tag in self.pg_soup.div.dl.findAll('dd'):
+			self.value.append(dd_tag.text.strip())
+
+		self.data_dict = dict(zip(self.key, self.value))
+
+		self.new_dict = Filter_data(self.data_dict, self.link_id)
+		return self.new_dict
+
+
+
+

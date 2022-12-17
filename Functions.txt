@@ -1,0 +1,416 @@
+import requests, re, csv, os, sys
+from bs4 import BeautifulSoup as soup
+from datetime import date, datetime, timedelta
+
+
+def Date_time():
+	## returns current date, current time, and yesterday's date
+
+	today = date.today()
+	yesterday = today - timedelta(days = 1)
+
+	now = datetime.now()
+	d = now.strftime("--%d-%m-%Y")
+	t = now.strftime("--%H;%M")
+	y = yesterday.strftime("--%d-%m-%Y")
+
+	today = str(d)
+	r_now = str(t)
+	yesterday = str(y)
+
+	return today, r_now, yesterday
+
+
+def Go_cft_pg(url):
+	## Going to 'latest CfT' page
+
+	cft = requests.get(url)
+	cft.close()
+	pg_soup = soup(cft.text, 'lxml')
+	return pg_soup
+
+
+def Next_pg(url):
+	## feed function link to current 'Latest CfTs'. Return link to next page
+
+	pg_soup = Go_cft_pg(url)
+
+	b_tag = pg_soup.div.find('button', {'title':'Next'})
+	link = b_tag.attrs['href']
+
+	next_pg_link = r"https://www.etenders.gov.mt/epps/quickSearchAction.do" +  link
+	return next_pg_link
+
+
+def Cft_link_id(pg_soup):
+	## Storing Tender link ids on 'Latest cft' page in a list
+
+	temp = []
+	for a_tag in pg_soup.div.tbody.findAll('a'):
+		temp.append(a_tag.attrs['href'])
+
+	links = []
+	links = list(filter(lambda link: (link.find("prepareView") != -1), temp))
+
+	link_ids = []
+	for link in links:
+		index_id = link.find("=", 30)
+		link_ids.append(link[index_id + 1:])
+
+	del temp[:]
+	del links[:]
+
+	return link_ids
+
+
+def Published_today(tender_data):
+	## this function will check the date the tender is published
+	## return True if date is today's date. returns False if not
+	## can also be used to check whether or not the last element in the list was published today
+	## this info will be used to decide if going to the next page is necessary
+	## 1st param: dictionary of tender information. From Tender.Tender_data() function
+	
+	publ_date = tender_data['Date of Publication']
+
+	today = date.today()
+
+	# dd/mm/YY
+	d1 = today.strftime("%d/%m/%Y")
+	# dd-mm-YY
+	d2 = today.strftime("%d-%m-%Y")
+	# dd.mm.YY
+	d3 = today.strftime("%d.%m.%Y")
+
+	#print("DATE OF PUBLICATION | " + d1 + " | " + d2 + " | " + d3)
+
+	test1 = publ_date.find(str(d1))
+	test2 = publ_date.find(str(d2))
+	test3 = publ_date.find(str(d3))
+
+	if test1 != -1:
+		return True
+	elif test2 != -1:
+		return True
+	elif test3 != -1:
+		return True
+	else:
+		return False
+
+
+def Published_yesterday(tender_data):
+	## this function will check the date the tender is published
+	## return True if date is yesterday's date. returns False if not
+	## can also be used to check whether or not the last element in the list was published yesterday
+	## this info will be used to decide if going to the next page is necessary
+	## 1st param: dictionary of tender information. From Tender.Tender_data() function
+	
+	publ_date = tender_data['Date of Publication']
+
+	today = date.today()
+	yesterday = today - timedelta(days = 1)
+	#yesterday = today - timedelta(days = 3)
+
+	# dd/mm/YY
+	y1 = yesterday.strftime("%d/%m/%Y")
+	# dd-mm-YY
+	y2 = yesterday.strftime("%d-%m-%Y")
+	# dd.mm.YY
+	y3 = yesterday.strftime("%d.%m.%Y")
+
+	#print("DATE OF PUBLICATION | " + y1 + " | " + y2 + " | " + y3)
+
+	test1 = publ_date.find(str(y1))
+	test2 = publ_date.find(str(y2))
+	test3 = publ_date.find(str(y3))
+
+	if test1 != -1:
+		return True
+	elif test2 != -1:
+		return True
+	elif test3 != -1:
+		return True
+	else:
+		return False
+
+
+def Filter_data(data_dict, link_id):
+	## function to be used in the function Tender.Tender_data()
+	## will filter through data gathered and return only relevant or useful information
+	## 1st param: unfiltered tender data
+	## 2nd param: tender link ID
+
+	new_dict = dict()
+
+	new_dict["Tender link ID"] = link_id
+	new_dict['CfT ID'] = data_dict['CfT CA Unique ID:']
+	new_dict['Title'] = data_dict['Title:']
+	new_dict['Name of CA'] = data_dict['Name of Contracting Authority:']
+	new_dict['lots?'] = data_dict['Contract awarded in Lots:']
+	#new_dict['Number of lots'] = data_dict.setdefault('Maximum Number of Lots:', 0)
+	new_dict['Date of Publication'] = data_dict['Date of Publication/Invitation:']
+	new_dict['Clarification Deadline'] = data_dict['End of clarification period:']
+	new_dict['Submission Deadline'] = data_dict['Tenders Opening Date:']
+	new_dict['Evaluation Mechanism'] = data_dict['Evaluation Mechanism:']
+	new_dict['Procurement Type'] = data_dict['Procurement Type:']
+	new_dict['Directive'] = data_dict['Directive:']
+	new_dict['NUTS codes'] = data_dict['NUTS codes:']
+	new_dict['EU funding'] = data_dict['EU funding:']
+	new_dict['CPV Codes'] = data_dict['CPV Codes:']
+
+	regex = re.compile(r'[\n\r\t]')
+	new_dict['CPV Codes'] = regex.sub("", new_dict['CPV Codes'])
+	new_dict['CPV Codes'].replace(" ", "")	
+
+	return new_dict
+
+
+def All_ids(url):
+	## Gets page with tenders
+	## appends all link IDs to a single list
+	## Takes in url of latest 'latest CfTs' page. stores all cft link ids in list
+
+	link_ids = []
+
+	pg_soup = Go_cft_pg(url)
+	ids = Cft_link_id(pg_soup)
+	link_ids += ids
+
+	return link_ids
+
+
+def All_tenders_today(url):
+	## storing all useful tender information belonging to all of today's tenders in a single list
+	from packages.Tender import Tender
+	
+	print("Please Wait...")
+
+	tenders_list = []
+	current_pg = url
+
+	keep_looping = True
+	while keep_looping == True:
+		ids = All_ids(current_pg)
+
+		for i in range(len(ids)):
+			tender = Tender(ids[i])
+			data = tender.Tender_data()
+			tenders_list.append(data)
+			#print(tenders_list[i])
+			#print()
+
+
+		last_tender = tenders_list[-1]
+		test = Published_today(last_tender)
+
+		if test == True:
+			current_pg = Next_pg(current_pg)
+
+		elif test == False:
+			test1 = False
+			while test1 == False:
+				del tenders_list[-1]
+				test1 = Published_today(tenders_list[-1])
+				keep_looping = False
+
+	return tenders_list
+
+
+def All_tenders_yesterday(url):
+	## storing all useful tender information belonging to all of yesterday's in a single list
+
+	from packages.Tender import Tender
+
+	print("Please Wait...")
+
+	tenders_list = []
+	current_pg = url
+
+	keep_looping = True
+	while keep_looping == True:
+		ids = All_ids(current_pg)
+
+		for i in range(len(ids)):
+			tender = Tender(ids[i])
+			data = tender.Tender_data()
+			tenders_list.append(data)
+		#	print(tenders_list[i])
+		#	print()
+
+
+		last_tender = tenders_list[-1]
+		test = Published_yesterday(last_tender)
+
+		if test == True:
+			current_pg = Next_pg(current_pg)
+
+		elif test == False:
+			test1 = False
+			while test1 == False:
+				del tenders_list[-1]
+				test1 = Published_yesterday(tenders_list[-1])
+				keep_looping = False
+
+		'''
+		first_tender = tenders_list[0]
+		test_f = Published_yesterday(first_tender)
+
+		if test_f == False:
+			test2 = False
+			while test2 == False:
+				del tenders_list[0]
+				test2 = Published_yesterday(tenders_list[0])
+				keep_looping = False
+		'''
+		
+	return tenders_list
+			
+
+def Create_csv(tenders_list, file_name):
+	## grabs list of all tenders of the day and store them into a .csv file format
+	## 1st param: list of tender information
+	## 2nd param: desired name of file
+	#from packages.Tender import Tender
+
+	#lots = int(Tender.max_num_of_lots)
+	dict1 = tenders_list[0]
+	mykeys = []
+
+	for k in dict1.keys():
+		mykeys.append(k)
+
+	#for lot in range(1, lots + 1):
+	#	mykeys.append('Lot ' + str(lot))
+
+	with open(file_name + '.csv', 'w', newline='') as file:
+		field_names = mykeys
+		writer = csv.DictWriter(file, fieldnames=field_names, extrasaction='ignore')
+
+		writer.writeheader()
+		for i in range(len(tenders_list)):
+			try:
+				writer.writerow(tenders_list[i])
+			except ValueError:
+				print(ValueError)
+
+
+def Filter_file_name(string_of_text):
+	string_obj = string_of_text
+	
+	if string_obj.find('\x01') != -1:
+		string_obj = string_obj.replace('\x01', '+_')
+
+	elif string_obj.find('/') != -1:
+		string_obj = string_obj.replace('/', '_+')
+
+	elif string_obj.find(':') != -1:
+		string_obj = string_obj.replace(':', ';;')
+
+	elif string_obj.find('*') != -1:
+		string_obj = string_obj.replace('*', 'x+x')
+
+	elif string_obj.find('?') != -1:
+		string_obj = string_obj.replace('?', '!!')
+
+	elif string_obj.find('"') != -1:
+		string_obj = string_obj.replace('"', "'")
+
+	elif string_obj.find('<') != -1:
+		string_obj = string_obj.replace('<', '+--')
+
+	elif string_obj.find('>') != -1:
+		string_obj = string_obj.replace('>', '--+')
+
+	elif string_obj.find('|') != -1:
+		string_obj = string_obj.replace('|', '____')
+
+	return string_obj
+
+
+def Main_dir(tenders_parent_path):
+	## go into desired parent directory
+	## if not found create new Main Tenders directory
+	## if found, go into Main Tenders directory
+
+	os.chdir(tenders_parent_path)
+	test = os.path.isdir('Tenders_auto')
+
+	if test == True:
+		os.chdir(tenders_parent_path + '\\Tenders_auto')
+	elif test == False:
+		os.mkdir('Tenders_auto')
+		os.chdir(tenders_parent_path + '\\Tenders_auto')
+
+
+def Todays_dir(tenders_path):
+	## Go into, or if not found create and go into today's designated Tender directory
+
+	today, r_now, yesterday = Date_time()
+
+	os.chdir(tenders_path)
+	test = os.path.isdir('Tenders' + today)
+
+	if test == True:
+		os.chdir(tenders_path + '\\Tenders' + today)
+
+	elif test == False:
+		os.mkdir('Tenders' + today)
+		os.chdir(tenders_path + '\\Tenders' + today)
+
+
+def Current_dir(tenders_path, current_time):
+	## create a directory to be saved in todays tender directory
+	## the file name will include the time the data was pulled from the site
+	## the 2nd param needs to be a tuple
+
+	today, r_now, yesterday = Date_time()
+
+	os.mkdir('Tenders' + str(current_time))
+	os.chdir(tenders_path + '\\Tenders' + today + '\\Tenders' + str(current_time))
+
+
+def Create_dir(url_id, title):
+	## creating a directory for an individual tender
+	## the 2 parameters will be used to name the directory
+
+	os.mkdir(url_id + '=-=' + title[:100])
+
+
+def Create_text(tenders_path, url_id, title, cft_id, current_time):
+	## go into individual tender's directory
+	## create and save text files which includes the links and tender title
+	from packages.Tender import Tender
+
+	today, r_now, yesterday = Date_time()
+
+	os.chdir(tenders_path + '\\Tenders' + today + '\\Tenders' + str(current_time) + '\\' + url_id + '=-=' + title[:100])
+
+	os.mkdir('Supp')
+	#os.mkdir('Tender')
+
+	open('links.txt', 'w')
+	with open('links.txt', 'a') as k:
+		k.write('Tender Unique ID: ' + cft_id + '\n')
+		k.write('Tender Title: ' + title + '\n\n\n')
+		k.write('Tender URL:\n')
+		k.write(Tender.website + Tender.tender_pg + url_id + '\n\n')
+		k.write('Documents URL:\n')
+		k.write(Tender.website + Tender.contract_docs + url_id + '\n\n')
+		k.write('Clarifications URL:\n')
+		k.write(Tender.website + Tender.clarifications + url_id)
+
+	os.chdir(tenders_path + '\\Tenders' + today + '\\Tenders' + str(current_time))
+
+
+def Download_files(tenders_path, url_id, cft_id, title, current_time):
+	## downloading tender documents from etenders website in binary format
+	from packages.Tender import Tender
+
+	today, r_now, yesterday = Date_time()
+	os.chdir(tenders_path + '\\Tenders' + today + '\\Tenders' + str(current_time) + '\\' + url_id + '=-=' + title[:100])
+
+	r = requests.get(Tender.download_p1 + url_id + Tender.download_p2)
+	with open(cft_id + '.zip', 'wb') as zip:
+			zip.write(r.content)
+			print(title + " ----> Documents Download Successful!!")
+
+	os.chdir(tenders_path + '\\Tenders' + today + '\\Tenders' + str(current_time))

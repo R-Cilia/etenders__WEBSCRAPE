@@ -1,0 +1,90 @@
+import requests, re, csv, os, sys
+from bs4 import BeautifulSoup as soup
+from packages.Tender import Tender
+from packages.functions import Go_cft_pg, Cft_link_id, Next_pg, Published_today, Published_yesterday
+from packages.functions import All_ids, All_tenders_yesterday, Date_time, Create_csv, Filter_file_name
+from packages.functions import Main_dir, Todays_dir, Current_dir, Create_dir, Create_text, Download_files
+
+today, r_now, yesterday = Date_time()
+tup_now = (r_now,)
+
+
+##### change tenders_path to where you want to run the program ######
+#tenders_path = r"C:\Users\russl\AppData\Local\Programs\Tenders_semi-auto"
+tenders_parent_path = input("Copy & Paste desired directory's path: ")
+tenders_path = tenders_parent_path + '\\Tenders_auto'
+
+
+Main_dir(tenders_parent_path)
+
+Todays_dir(tenders_path)
+## success
+Current_dir(tenders_path, tup_now)
+## success
+
+###  Logging into etenders website
+url = r"https://www.etenders.gov.mt/epps/login.do"
+
+s = requests.session()
+
+#r = s.get(url, verify = False)
+
+payload = {
+	'username': 'hydrorg',
+	'password': 'Ervs@Cil4',
+	'loginRedirectPath': '', 
+	'loginRedirectPathParams': '',
+	'userType': 'non-eID'
+	}
+
+r = s.post(url, data=payload, verify=False)
+r.close()
+## Success
+
+
+tender_info = All_tenders_yesterday(Tender.cft_1st)
+
+
+file_name = 'Tenders' + today + r_now
+Create_csv(tender_info, file_name)
+
+
+url_ids = []
+titles = []
+cft_ids = []
+name_ca = []
+pub_date = []
+clar_date = []
+dead_line = []
+proc_type = []
+cpv = []
+
+with open(file_name + '.csv', 'r') as csv_file:
+	csv_reader = csv.DictReader(csv_file)
+
+	next(csv_reader)   # skip firt line in csv, the headers in this case
+
+	for line in csv_reader:
+		url_ids.append(line['Tender link ID'])
+		titles.append(line['Title'])
+		cft_ids.append(line['CfT ID'])
+		name_ca.append(line['Name of CA'])
+		pub_date.append(line['Date of Publication'])
+		clar_date.append(line['Clarification Deadline'])
+		dead_line.append(line['Submission Deadline'])
+		proc_type.append(line['Procurement Type'])
+		cpv.append(line['CPV Codes'])
+
+new_titles = []
+for t in titles:
+	new_titles.append(Filter_file_name(t))
+
+new_cft_ids = []
+for i in cft_ids:
+	new_cft_ids.append(Filter_file_name(i))
+
+
+for i in range(len(new_titles)):
+	Create_dir(url_ids[i], new_titles[i])
+	Create_text(tenders_path, url_ids[i], new_titles[i], cft_ids[i], tup_now)
+	Download_files(tenders_path, url_ids[i], new_cft_ids[i], new_titles[i], tup_now)
