@@ -86,7 +86,3 @@ class Tender:
 
 		self.new_dict = Filter_data(self.data_dict, self.link_id)
 		return self.new_dict
-
-
-
-

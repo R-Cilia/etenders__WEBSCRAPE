@@ -30,8 +30,8 @@ s = requests.session()
 #r = s.get(url, verify = False)
 
 payload = {
-	'username': 'hydrorg',
-	'password': 'Ervs@Cil4',
+	'username': '{USERNAME}',
+	'password': '{PASSWORD}',
 	'loginRedirectPath': '', 
 	'loginRedirectPathParams': '',
 	'userType': 'non-eID'
